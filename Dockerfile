@@ -1,7 +1,7 @@
 FROM archlinux:latest
 
-LABEL maintainer="talosplus"
-LABEL description="Minimal container with talosplus - tools installed via installtools.sh"
+LABEL maintainer="1hehaq"
+LABEL description="talos runs with talosplus"
 
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
