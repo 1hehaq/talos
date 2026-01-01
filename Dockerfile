@@ -1,164 +1,41 @@
-# syntax=docker/dockerfile:1.4
+FROM archlinux:latest
 
-## You can change these variables
-ARG COLLAB_SERVER="XXXXXXXXXX"
-ARG XSS_SERVER="XXXXXXXXXXX"
-ARG SHODAN_API_KEY="XXXXXXXXXXXXXX"
+LABEL maintainer="talosplus"
+LABEL description="Minimal container with talosplus - tools installed via installtools.sh"
 
-ARG LANG=en_US.UTF-8
-ARG LANGUAGE=en_US
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV GOROOT=/usr/local/go
+ENV GOPATH=/root/go
+ENV CARGOPATH=/root/.cargo/bin
+ENV PATH="${GOROOT}/bin:${GOPATH}/bin:${CARGOPATH}:/root/.local/bin:/usr/local/bin:${PATH}"
 
-##################################################
-###> Do NOT change anything beyond this point <###
-##################################################
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm --needed \
+        base-devel git go rust python python-pip python-pipx \
+        curl wget jq bind whois nmap libpcap openssl \
+        libffi libxml2 libxslt zlib zip unzip cmake gcc make ruby && \
+    pacman -Scc --noconfirm
 
-FROM ubuntu:latest AS base
+RUN mkdir -p /opt/tools /opt/wordlists /root/.gf /root/.config/notify /root/.config/subfinder /data
 
-LABEL org.label-schema.name='reconftw'
-LABEL org.label-schema.description='A simple script for full recon'
-LABEL org.label-schema.usage='https://github.com/six2dez/reconftw'
-LABEL org.label-schema.url='https://github.com/six2dez/reconftw'
-LABEL org.label-schema.docker.cmd.devel='docker run --rm -ti six2dez/reconftw'
-LABEL MAINTAINER="six2dez"
+WORKDIR /opt/talosplus
 
-ARG COLLAB_SERVER
-ARG XSS_SERVER
-ARG SHODAN_API_KEY
+COPY . .
 
-ARG LANG
-ARG LANGUAGE
+RUN go build -o /usr/local/bin/talosplus ./cmd/talosplus/ && \
+    rm -rf /root/go/pkg /root/.cache
 
-ARG GIT_REPOSITORY_AXIOM="https://github.com/attacksurge/ax.git"
-ARG GIT_REPOSITORY_RECONFTW="https://github.com/six2dez/reconftw"
-ARG INSTALL_AXIOM=true
+RUN wget -q "https://gist.github.com/six2dez/a307a04a222fab5a57466c51e1569acf/raw" -O /opt/wordlists/subdomains.txt && \
+    wget -q "https://raw.githubusercontent.com/n0kovo/n0kovo_subdomains/main/n0kovo_subdomains_huge.txt" -O /opt/wordlists/subdomains_big.txt && \
+    wget -q "https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt" -O /opt/wordlists/resolvers.txt && \
+    wget -q "https://gist.githubusercontent.com/six2dez/ae9ed7e5c786461868abd3f2344401b6/raw" -O /opt/wordlists/resolvers_trusted.txt && \
+    wget -q "https://raw.githubusercontent.com/six2dez/OneListForAll/main/onelistforallmicro.txt" -O /opt/wordlists/fuzz.txt && \
+    wget -q "https://gist.githubusercontent.com/six2dez/a89a0c7861d49bb61a09822d272d5395/raw" -O /opt/wordlists/lfi.txt && \
+    wget -q "https://gist.githubusercontent.com/six2dez/ab5277b11da7369bf4e9db72b49ad3c1/raw" -O /opt/wordlists/ssti.txt && \
+    wget -q "https://gist.github.com/six2dez/ffc2b14d283e8f8eff6ac83e20a3c4b4/raw" -O /opt/wordlists/permutations.txt
 
-ENV COLLAB_SERVER=$COLLAB_SERVER
-ENV XSS_SERVER=$XSS_SERVER
-ENV SHODAN_API_KEY=$SHODAN_API_KEY
+WORKDIR /data
 
-ENV LANG=$LANG
-ENV LANGUAGE=$LANGUAGE
-ENV LC_ALL=$LANG
-
-ENV GIT_REPOSITORY_AXIOM=$GIT_REPOSITORY_AXIOM
-ENV GIT_REPOSITORY_RECONFTW=$GIT_REPOSITORY_RECONFTW
-
-ENV INSTALL_AXIOM=$INSTALL_AXIOM
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV DEBCONF_NONINTERACTIVE_SEEN=true
-
-ENV GOROOT='/usr/local/go'
-ENV GOPATH='/root/go'
-ENV AXIOMPATH='/root/.axiom/interact'
-ENV CARGOPATH='/root/.cargo/bin'
-ENV PATH="${GOROOT}/bin:${GOPATH}/bin:${AXIOMPATH}:${CARGOPATH}:${PATH}"
-
-COPY 01_nodoc /etc/dpkg/dpkg.cfg.d/
-
-RUN <<eot
-#!/bin/bash
-set -euxo pipefail
-
-###>> Backup .bashrc <<###
-cp /root/.bashrc /root/original.bashrc
-
-###>> System Configuration <<###
-apt clean all
-apt update
-apt full-upgrade -f -y --allow-downgrades
-apt install -y --no-install-recommends apt-utils ca-certificates curl git lsb-release nano wget vim jq htop net-tools dnsutils nmap python3 python3-pip unzip whois
-
-###>> Congifure Locales <<###
-apt install -y --no-install-recommends locales
-sed -i -- "/${LANG}/s/^# //g" /etc/locale.gen
-dpkg-reconfigure locales
-update-locale LANG=${LANG}
-
-###>> Congifure localepurge <<###
-apt install -y --no-install-recommends localepurge
-sed -i -- '/^USE_DPKG/s/^/#/' /etc/locale.nopurge
-dpkg-reconfigure localepurge
-localepurge
-
-###>> Configure Axiom <<###
-if [[ "${INSTALL_AXIOM}" == "true" ]]; then
-    mkdir -p /root/.axiom/
-    git clone ${GIT_REPOSITORY_AXIOM} /root/.axiom/
-    cd /root/.axiom/interact
-    ./axiom-configure --unattended --shell Bash || echo "Axiom configure failed or was skipped; continue without cloud fleet."
-    ## This avoids useless error messages later.
-    touch /root/.axiom/axiom.json
-    touch /root/.axiom/interact/includes/functions.sh
-else
-    echo "INSTALL_AXIOM=${INSTALL_AXIOM}; skipping Axiom tooling."
-fi
-
-###>> Install reconFTW <<###
-mkdir -p /root/Tools
-mkdir -p /reconftw
-git clone ${GIT_REPOSITORY_RECONFTW} /reconftw
-cd /reconftw
-sh -c 'echo 1 | ./install.sh'
-
-###>> Restore .bashrc <<###
-mv /root/original.bashrc /root/.bashrc
-find /root -type f \( -name '.bashrc*' -not -name '.bashrc' \) -delete
-
-###>> Clean up <<###
-apt update
-apt remove --purge -y build-essential
-apt autoremove -y
-apt clean all
-find /var/lib/apt/lists -type f -delete
-find /var/cache -type f -delete
-find /var/log -type f -delete
-find /tmp -type f -delete
-rm -rf /root/.cache
-rm -rf /root/go
-eot
-
-COPY github_tokens.txt /root/Tools/.github_tokens
-COPY notify.conf /root/.config/notify/provider-config.yaml
-
-###>> Configure Axiom Provider <<###
-RUN <<eot
-set -euxo pipefail
-if [[ "${INSTALL_AXIOM}" == "true" ]]; then
-    ###>> Regenerate SSH Keys <<###
-    apt update && apt install -y --no-install-recommends openssh-client
-
-    mkdir -p /root/.ssh
-    mkdir -p /root/.axiom/configs
-
-    ssh-keygen -b 2048 -t rsa -f /root/.ssh/axiom_rsa -q -N ""
-    cat /root/.ssh/axiom_rsa.pub > /root/.axiom/configs/authorized_keys
-
-    apt remove --purge -y openssh-client && apt autoremove -y && apt clean all
-    find /var/lib/apt/lists -type f -delete
-    find /var/cache -type f -delete
-    find /var/log -type f -delete
-    find /tmp -type f -delete
-    rm -rf /root/.cache
-else
-    echo "INSTALL_AXIOM=${INSTALL_AXIOM}; skipping Axiom provider setup."
-fi
-eot
-
-#COPY axiom-config.ini /root/.axiom/configs/config.ini
-#COPY axiom-custom-provider.json /root/.axiom/accounts/personal.json
-RUN if [[ "${INSTALL_AXIOM}" == "true" ]]; then axiom-account personal || echo "Axiom account not configured; provide provider config to enable it."; fi
-# RUN az group delete --name axiom --yes --no-wait
-
- # This command exits with return code 1, so leave the '|| :' or the build will fail.
-# COPY axiom-custom-provider.json /root/.axiom/accounts/personal.json
-RUN if [[ "${INSTALL_AXIOM}" == "true" ]]; then axiom-build reconftw || :; fi
-
-## Issue 271
-EXPOSE 85-90
-
-WORKDIR /reconftw
-
-SHELL [ "/bin/bash", "-c" ]
-ENTRYPOINT [ "./reconftw.sh" ]
-CMD [ "--help" ]
+ENTRYPOINT ["/bin/bash", "-c", "talosplus run installtools.sh && exec talosplus run fullrecon.sh \"$@\"", "--"]
+CMD ["--help"]
