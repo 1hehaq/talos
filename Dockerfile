@@ -3,12 +3,9 @@ FROM archlinux:latest
 LABEL maintainer="1hehaq"
 LABEL description="talos runs with talosplus"
 
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
-ENV GOROOT=/usr/local/go
 ENV GOPATH=/root/go
 ENV CARGOPATH=/root/.cargo/bin
-ENV PATH="${GOROOT}/bin:${GOPATH}/bin:${CARGOPATH}:/root/.local/bin:/usr/local/bin:${PATH}"
+ENV PATH="${GOPATH}/bin:${CARGOPATH}:/root/.local/bin:/usr/local/bin:${PATH}"
 
 RUN pacman -Syu --noconfirm && \
     pacman -S --noconfirm --needed \
@@ -23,8 +20,18 @@ WORKDIR /opt/talosplus
 
 COPY . .
 
-RUN go build -o /usr/local/bin/talosplus ./cmd/talosplus/ && \
-    rm -rf /root/go/pkg /root/.cache
+RUN go install github.com/tarunKoyalwar/talosplus/cmd/talosplus@latest
+
+RUN mkdir -p /opt/talosplus/templates && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/installtools.sh" -O /opt/talosplus/templates/installtools.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/fullrecon.sh" -O /opt/talosplus/templates/fullrecon.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/hostscan.sh" -O /opt/talosplus/templates/hostscan.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/osint.sh" -O /opt/talosplus/templates/osint.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/passiveonly.sh" -O /opt/talosplus/templates/passiveonly.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/quickrecon.sh" -O /opt/talosplus/templates/quickrecon.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/subenum.sh" -O /opt/talosplus/templates/subenum.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/vulnscan.sh" -O /opt/talosplus/templates/vulnscan.sh && \
+    wget -q "https://raw.githubusercontent.com/1hehaq/talos/main/templates/webanalys.sh" -O /opt/talosplus/templates/webanalys.sh
 
 RUN wget -q "https://gist.github.com/six2dez/a307a04a222fab5a57466c51e1569acf/raw" -O /opt/wordlists/subdomains.txt && \
     wget -q "https://raw.githubusercontent.com/n0kovo/n0kovo_subdomains/main/n0kovo_subdomains_huge.txt" -O /opt/wordlists/subdomains_big.txt && \
